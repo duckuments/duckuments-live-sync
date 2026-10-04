@@ -92,10 +92,7 @@ export class SyncEngine {
     // ponytail: push upserts present files; it does not delete remote docs
     // for locally-removed files. Live sync handles deletions.
     this.dirty = false;
-    this.onStatus(
-      this.syncHandler ? "synced" : "synced",
-      `Pushed ${docs.length} notes.`,
-    );
+    this.onStatus("synced", `Pushed ${docs.length} notes.`);
     return docs.length;
   }
 
