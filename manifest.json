@@ -1,0 +1,9 @@
+{
+  "id": "duckuments-live-sync",
+  "name": "Duckuments LiveSync",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Minimal self-hosted CouchDB live sync for your vault, with end-to-end encryption and multiple remote vaults.",
+  "author": "duckuments",
+  "isDesktopOnly": false
+}

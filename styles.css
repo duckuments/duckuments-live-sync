@@ -1,0 +1,51 @@
+.duckuments-vault-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.duckuments-vault-card.is-default {
+  border-color: var(--interactive-accent);
+}
+.duckuments-vault-card h4 {
+  margin: 0 0 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.duckuments-vault-card .duckuments-badge {
+  font-size: 11px;
+  color: var(--interactive-accent);
+  border: 1px solid var(--interactive-accent);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.duckuments-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.duckuments-field label {
+  flex: 0 0 110px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.duckuments-field input {
+  flex: 1;
+}
+.duckuments-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.duckuments-status-ok {
+  color: var(--text-success);
+}
+.duckuments-status-dirty {
+  color: var(--text-warning);
+}
+.duckuments-status-error {
+  color: var(--text-error);
+}
