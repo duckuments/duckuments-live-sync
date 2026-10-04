@@ -119,7 +119,7 @@ export class SyncEngine {
     const v = this.defaultVault;
     if (!v) return;
     const db = this.db();
-    const remote = remoteDB(v);
+    const remote = remoteDB(v) as PouchDB.Database<NoteDoc>;
 
     // Seed the local mirror, then watch it and reflect into the vault.
     this.changesHandler = db
@@ -172,7 +172,7 @@ export class SyncEngine {
   // Last-write-wins by mtime: keep the newest revision, drop the losers.
   private async resolveConflicts(id: string): Promise<NoteDoc | null> {
     const db = this.db();
-    let doc: NoteDoc;
+    let doc: NoteDoc & PouchDB.Core.GetMeta;
     try {
       doc = await db.get(id, { conflicts: true });
     } catch {

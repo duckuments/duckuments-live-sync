@@ -11,7 +11,7 @@ const IV_LEN = 12;
 
 async function deriveKey(
   passphrase: string,
-  salt: Uint8Array,
+  salt: Uint8Array<ArrayBuffer>,
 ): Promise<CryptoKey> {
   const base = await crypto.subtle.importKey(
     "raw",
@@ -35,7 +35,7 @@ function toB64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
-function fromB64(b64: string): Uint8Array {
+function fromB64(b64: string): Uint8Array<ArrayBuffer> {
   const s = atob(b64);
   const out = new Uint8Array(s.length);
   for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);

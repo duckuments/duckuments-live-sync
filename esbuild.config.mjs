@@ -4,6 +4,13 @@ import fs from "node:fs";
 import path from "node:path";
 import builtins from "builtin-modules";
 
+// Load .env (for PATHS_TEST_INSTALL) if present. Node 20.12+/22+ built-in.
+try {
+    process.loadEnvFile();
+} catch {
+    /* no .env — fine */
+}
+
 const prod = process.argv[2] === "production";
 
 // PATHS_TEST_INSTALL: copy built files into your Obsidian vault plugin folder(s)
