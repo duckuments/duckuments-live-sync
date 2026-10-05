@@ -57,6 +57,27 @@ export async function listRemoteVaults(v: RemoteVault): Promise<string[]> {
   return dbs.filter((d) => !d.startsWith("_"));
 }
 
+/**
+ * Upsert a public snapshot doc (`pub:<slug>`) holding plaintext markdown.
+ * Written with a raw handle so it bypasses E2EE — the public viewer reads it
+ * directly. Its existence is what makes a note public.
+ */
+export async function putPublicNote(
+  v: RemoteVault,
+  slug: string,
+  note: { markdown: string; title: string; path: string },
+): Promise<void> {
+  const db = remoteDB(v);
+  const _id = `pub:${slug}`;
+  let _rev: string | undefined;
+  try {
+    _rev = (await db.get(_id))._rev;
+  } catch (e) {
+    if ((e as { status?: number }).status !== 404) throw e;
+  }
+  await db.put({ _id, ...(_rev ? { _rev } : {}), ...note, published_at: Date.now() });
+}
+
 export function describeError(e: unknown): string {
   if (e && typeof e === "object") {
     const anyE = e as Record<string, unknown>;

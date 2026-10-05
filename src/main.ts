@@ -6,6 +6,8 @@ import {
   getDefaultVault,
 } from "./settings";
 import { SyncEngine, type SyncStatus } from "./sync/engine";
+import { putPublicNote } from "./api/routes";
+import { BASE_URL, ensureSlug, titleOf } from "./share";
 import { VaultChooserModal } from "./ui/VaultChooserModal";
 import { DuckumentsSettingTab } from "./ui/SettingsTab";
 import { LogView, LOG_VIEW_TYPE } from "./ui/LogView";
@@ -80,6 +82,16 @@ export default class DuckumentsLiveSync extends Plugin {
       id: "toggle-live",
       name: "Toggle live sync",
       callback: () => this.toggleLive(),
+    });
+    this.addCommand({
+      id: "copy-public-link",
+      name: "Copy public link for the active note",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || file.extension !== "md") return false;
+        if (!checking) this.run(this.copyPublicLink(file));
+        return true;
+      },
     });
 
     // Register vault events after layout is ready so the initial file scan
@@ -161,6 +173,26 @@ export default class DuckumentsLiveSync extends Plugin {
     new VaultChooserModal(this.app, this.settings.vaults, action, (v) =>
       this.run(fn(v)),
     ).open();
+  }
+
+  private async copyPublicLink(file: TFile): Promise<void> {
+    const v = getDefaultVault(this.settings);
+    if (!v) {
+      new Notice("No remote configured. Add one in settings.");
+      return;
+    }
+    const original = await this.app.vault.read(file);
+    const { slug, text } = ensureSlug(original);
+    // Persist the slug in the note so re-publishing keeps the same link.
+    if (text !== original) await this.app.vault.modify(file, text);
+    await putPublicNote(v, slug, {
+      markdown: text,
+      title: titleOf(text, file.path),
+      path: file.path,
+    });
+    const link = `${BASE_URL}/r/${slug}`;
+    await navigator.clipboard.writeText(link);
+    new Notice("Public link copied: " + link);
   }
 
   private async toggleLive(): Promise<void> {
