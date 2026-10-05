@@ -22,7 +22,7 @@ export class VaultChooserModal extends SuggestModal<RemoteVault> {
   }
 
   renderSuggestion(v: RemoteVault, el: HTMLElement): void {
-    el.createEl("div", { text: v.name });
+    el.createDiv({ text: v.name });
     el.createEl("small", { text: `${v.couchURI} / ${v.dbName}` });
   }
 
