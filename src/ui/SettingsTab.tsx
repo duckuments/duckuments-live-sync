@@ -91,6 +91,20 @@ function SettingsView({ plugin }: { plugin: DuckumentsLiveSync }) {
         </span>
       </div>
 
+      <div className="duckuments-field">
+        <label>Sync on startup</label>
+        <input
+          type="checkbox"
+          checked={settings.syncOnStartup}
+          onChange={(e) =>
+            save({ ...settings, syncOnStartup: e.target.checked })
+          }
+        />
+        <span className="setting-item-description">
+          Pull from the default remote once when Obsidian starts.
+        </span>
+      </div>
+
       {settings.vaults.length === 0 && (
         <p className="setting-item-description">
           No remote vaults yet. Add one below.

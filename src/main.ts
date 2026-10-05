@@ -84,6 +84,8 @@ export default class DuckumentsLiveSync extends Plugin {
         getDefaultVault(this.settings),
         this.settings.liveSync,
       );
+      if (this.settings.syncOnStartup)
+        void this.withDefault((v) => this.engine.pullFrom(v));
     });
   }
 

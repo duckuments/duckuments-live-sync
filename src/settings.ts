@@ -14,12 +14,14 @@ export interface LiveSyncSettings {
   vaults: RemoteVault[];
   defaultVaultId: string | null;
   liveSync: boolean; // continuous replication with the default vault
+  syncOnStartup: boolean; // pull from the default remote once on load
 }
 
 export const DEFAULT_SETTINGS: LiveSyncSettings = {
   vaults: [],
   defaultVaultId: null,
   liveSync: false,
+  syncOnStartup: false,
 };
 
 export function newVault(): RemoteVault {
