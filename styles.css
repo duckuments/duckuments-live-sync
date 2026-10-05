@@ -36,7 +36,13 @@
 }
 .duckuments-field input[type="checkbox"] {
   flex: 0 0 auto;
-  width: auto;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  margin: 0;
+  appearance: auto;
+  -webkit-appearance: checkbox;
+  accent-color: var(--interactive-accent);
 }
 .duckuments-card-actions {
   display: flex;

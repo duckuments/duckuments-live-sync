@@ -85,3 +85,52 @@ export async function decryptString(
   const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
   return new TextDecoder().decode(pt);
 }
+
+// ---- obsidian-livesync interop (E2EEAlgorithm "V2" / HKDF) ----------------
+// Their chunk data is `"%="` + base64( iv[12] | hkdfSalt[32] | ciphertext ).
+// Key = HKDF-SHA256( PBKDF2-SHA256(passphrase, pbkdf2Salt, 310k) ), AES-GCM-256.
+// pbkdf2Salt is shared (not embedded) — it lives in the remote _local sync-params
+// doc; the caller fetches it. See SyncEngine.olsSalt.
+export const OLS_HKDF_PREFIX = "%=";
+const OLS_PBKDF2_ITERATIONS = 310_000;
+const OLS_HKDF_SALT_LEN = 32;
+
+export async function decryptHKDF(
+  payload: string,
+  passphrase: string,
+  pbkdf2Salt: Uint8Array<ArrayBuffer>,
+): Promise<string> {
+  const packed = fromB64(payload.slice(OLS_HKDF_PREFIX.length));
+  const iv = packed.slice(0, IV_LEN);
+  const hkdfSalt = packed.slice(IV_LEN, IV_LEN + OLS_HKDF_SALT_LEN);
+  const ct = packed.slice(IV_LEN + OLS_HKDF_SALT_LEN);
+  const base = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(passphrase),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+  const masterBits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: pbkdf2Salt, iterations: OLS_PBKDF2_ITERATIONS, hash: "SHA-256" },
+    base,
+    256,
+  );
+  const hkdfKey = await crypto.subtle.importKey("raw", masterBits, "HKDF", false, [
+    "deriveKey",
+  ]);
+  const key = await crypto.subtle.deriveKey(
+    {
+      name: "HKDF",
+      hash: "SHA-256",
+      salt: hkdfSalt,
+      info: new Uint8Array(new ArrayBuffer(0)),
+    },
+    hkdfKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["decrypt"],
+  );
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
+  return new TextDecoder().decode(pt);
+}

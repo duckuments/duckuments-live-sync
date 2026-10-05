@@ -7,8 +7,8 @@ export interface NoteDoc {
   path: string;
   mtime: number;
   ctime: number;
-  type: "plain";
-  data: string; // note content (ciphertext when E2EE is on)
+  type: "plain" | "folder"; // "folder" = empty-folder marker (data is "")
+  data: string; // note content (ciphertext when E2EE is on); "" for folders
   _deleted?: boolean;
 }
 

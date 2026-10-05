@@ -12,7 +12,12 @@ import { type App, TFile, TFolder, normalizePath } from "obsidian";
 import PouchDB from "pouchdb-browser";
 import type { RemoteVault } from "../settings";
 import { remoteDB } from "../api/routes";
-import { encryptString, decryptString } from "../api/encryption";
+import {
+  encryptString,
+  decryptString,
+  decryptHKDF,
+  OLS_HKDF_PREFIX,
+} from "../api/encryption";
 import { isSyncable, type NoteDoc } from "./mapping";
 import { logger } from "../log";
 
@@ -24,6 +29,9 @@ export class SyncEngine {
   private changesHandler: PouchDB.Core.Changes<NoteDoc> | null = null;
   private defaultVault: RemoteVault | null = null;
   private dirty = false;
+  // obsidian-livesync shares one PBKDF2 salt per remote (its _local sync-params
+  // doc). Cache the decoded salt per remote db; null = no OLS E2EE on that db.
+  private olsSaltCache = new Map<string, Uint8Array<ArrayBuffer> | null>();
 
   constructor(
     private app: App,
@@ -70,7 +78,19 @@ export class SyncEngine {
     this.onStatus("syncing", `Pushing to "${v.name}"...`);
     const db = remoteDB(v);
     const files = this.app.vault.getFiles().filter(isSyncable);
-    const existing = await db.allDocs({ keys: files.map((f) => f.path) });
+    // Empty folders have no file, so sync them as marker docs so they survive
+    // the round-trip (CouchDB has no folder concept).
+    const emptyFolders = this.app.vault
+      .getAllLoadedFiles()
+      .filter(
+        (f): f is TFolder =>
+          f instanceof TFolder && f.path !== "/" && f.children.length === 0,
+      );
+    const ids = [
+      ...files.map((f) => f.path),
+      ...emptyFolders.map((f) => f.path),
+    ];
+    const existing = await db.allDocs({ keys: ids });
     const revMap = new Map<string, string>();
     for (const row of existing.rows) {
       if ("value" in row && row.value && !row.value.deleted)
@@ -89,11 +109,25 @@ export class SyncEngine {
         data: await encryptString(content, v.passphrase),
       });
     }
+    for (const folder of emptyFolders) {
+      docs.push({
+        _id: folder.path,
+        _rev: revMap.get(folder.path),
+        path: folder.path,
+        mtime: 0,
+        ctime: 0,
+        type: "folder",
+        data: "",
+      });
+    }
     if (docs.length) await db.bulkDocs(docs as NoteDoc[]);
-    // ponytail: push upserts present files; it does not delete remote docs
-    // for locally-removed files. Live sync handles deletions.
+    // ponytail: push upserts present files/empty folders; it does not delete
+    // remote docs for locally-removed ones. Live sync handles deletions.
     this.dirty = false;
-    this.onStatus("synced", `Pushed ${docs.length} notes.`);
+    this.onStatus(
+      "synced",
+      `Pushed ${files.length} notes, ${emptyFolders.length} empty folders.`,
+    );
     return docs.length;
   }
 
@@ -101,36 +135,154 @@ export class SyncEngine {
   async pullFrom(v: RemoteVault): Promise<number> {
     this.onStatus("syncing", `Pulling from "${v.name}"...`);
     const db = remoteDB(v);
-    const res = await db.allDocs<NoteDoc>({ include_docs: true });
+    const res = await db.allDocs<Record<string, unknown>>({
+      include_docs: true,
+    });
     let n = 0;
+    let folders = 0;
     let skipped = 0;
-    let sample: NoteDoc | undefined;
+    let sample: Record<string, unknown> | undefined;
     for (const row of res.rows) {
-      const doc = row.doc;
-      if (!doc || doc._id.startsWith("_design")) continue;
-      // Only this plugin's docs have a `path` and a string `data` field.
-      // Docs from another tool (e.g. obsidian-livesync's chunked schema) are
-      // skipped rather than crashing the pull.
-      if (!doc.path || doc._deleted || typeof doc.data !== "string") {
+      const doc = row.doc as Record<string, unknown> | undefined;
+      if (!doc) continue;
+      const id = String(doc._id);
+      const type = doc.type;
+      // Skip design docs and chunk/leaf docs (they aren't files).
+      if (id.startsWith("_design") || type === "leaf" || type === "chunkpack")
+        continue;
+      const path = doc.path;
+      if (typeof path !== "string" || doc._deleted || doc.deleted) continue;
+
+      if (type === "folder") {
+        await this.ensureFolderExists(path);
+        folders++;
+        continue;
+      }
+
+      const content = await this.readRemoteContent(db, doc, v.passphrase);
+      if (content === null) {
         skipped++;
         if (!sample) sample = doc;
         continue;
       }
-      const content = await decryptString(doc.data, v.passphrase);
-      await this.writeToVault(doc.path, content);
+      await this.writeToVault(path, content);
       n++;
     }
     if (n === 0 && skipped > 0 && sample) {
       logger.log(
-        `Pull: skipped ${skipped} doc(s) not in this plugin's format. ` +
-          `Sample "${sample._id}" fields: ${Object.keys(sample).join(", ")}`,
+        `Pull: skipped ${skipped} doc(s) this plugin can't read as text. ` +
+          `Sample "${String(sample._id)}" fields: ${Object.keys(sample).join(", ")}`,
       );
     }
     this.onStatus(
       "synced",
-      `Pulled ${n} notes (server had ${res.rows.length} docs, skipped ${skipped}).`,
+      `Pulled ${n} notes, ${folders} folders (server had ${res.rows.length} docs, skipped ${skipped}).`,
     );
     return n;
+  }
+
+  /**
+   * Read a remote doc's content as text. Supports:
+   *  - this plugin's own format (string `data`, optionally E2EE),
+   *  - obsidian-livesync chunked text notes ("plain": children/eden -> leaves),
+   *  - legacy inline notes ("notes": data string | string[]).
+   * Returns null for anything it can't read as text (binary "newnote",
+   * encrypted/compressed chunks, a missing chunk, or a wrong passphrase).
+   */
+  private async readRemoteContent(
+    db: PouchDB.Database,
+    doc: Record<string, unknown>,
+    passphrase: string,
+  ): Promise<string | null> {
+    // This plugin's own doc (or an obsidian-livesync inline/HKDF data string).
+    if (typeof doc.data === "string") {
+      try {
+        return await this.decryptPart(doc.data, passphrase, db);
+      } catch {
+        return null;
+      }
+    }
+    // Legacy obsidian-livesync inline note.
+    if (doc.type === "notes") {
+      if (Array.isArray(doc.data)) return doc.data.join("");
+      return typeof doc.data === "string" ? doc.data : null;
+    }
+    // obsidian-livesync chunked note. Only "plain" is text; "newnote" is
+    // base64-encoded binary — skipped (text-only, deferred).
+    if (doc.type !== "plain" || !Array.isArray(doc.children)) return null;
+
+    const children = doc.children as string[];
+    const eden = (doc.eden ?? {}) as Record<string, { data?: unknown }>;
+    const missing = children.filter((id) => typeof eden[id]?.data !== "string");
+    const leaves = new Map<string, string>();
+    if (missing.length) {
+      const chunkRes = await db.allDocs<{ data?: unknown }>({
+        keys: missing,
+        include_docs: true,
+      });
+      for (const row of chunkRes.rows) {
+        if (!("doc" in row)) continue;
+        const leaf = row.doc;
+        if (leaf && typeof leaf.data === "string") leaves.set(row.id, leaf.data);
+      }
+    }
+    const parts: string[] = [];
+    for (const id of children) {
+      const edenData = eden[id]?.data;
+      // Each chunk is encrypted independently, so decrypt per-chunk then join.
+      // (Joining first is what left "%=...%=..." ciphertext in the vault.)
+      const raw =
+        typeof edenData === "string" ? edenData : (leaves.get(id) ?? null);
+      if (raw === null) return null; // a chunk is missing — can't assemble
+      const part = await this.decryptPart(raw, passphrase, db);
+      if (part === null) return null; // can't decrypt a chunk (wrong passphrase?)
+      parts.push(part);
+    }
+    return parts.join("");
+  }
+
+  /**
+   * Decrypt one stored data string back to text. Handles this plugin's own
+   * format ("enc:" / plaintext passthrough) and obsidian-livesync's HKDF E2EE
+   * ("%=", keyed by the remote's shared PBKDF2 salt). Returns null if the
+   * remote uses OLS E2EE but has no salt doc we can read.
+   */
+  private async decryptPart(
+    data: string,
+    passphrase: string,
+    db: PouchDB.Database,
+  ): Promise<string | null> {
+    if (data.startsWith(OLS_HKDF_PREFIX)) {
+      const salt = await this.olsSalt(db);
+      if (!salt) return null;
+      return decryptHKDF(data, passphrase, salt);
+    }
+    // ponytail: handles OLS HKDF ("%=") + this plugin's own format. Legacy OLS
+    // PBKDF2 ("%" / "%~") not decoded — add if a pre-HKDF remote shows up.
+    return decryptString(data, passphrase);
+  }
+
+  /** Fetch & cache obsidian-livesync's shared PBKDF2 salt for `db`. */
+  private async olsSalt(
+    db: PouchDB.Database,
+  ): Promise<Uint8Array<ArrayBuffer> | null> {
+    const key = db.name;
+    const cached = this.olsSaltCache.get(key);
+    if (cached !== undefined) return cached;
+    let salt: Uint8Array<ArrayBuffer> | null = null;
+    try {
+      const doc = await db.get<{ pbkdf2salt?: string }>(
+        "_local/obsidian_livesync_sync_parameters",
+      );
+      if (doc.pbkdf2salt) {
+        const bin = atob(doc.pbkdf2salt);
+        salt = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+      }
+    } catch {
+      salt = null; // no sync-params doc → not an OLS-E2EE remote (or unreadable)
+    }
+    this.olsSaltCache.set(key, salt);
+    return salt;
   }
 
   // ---- live continuous replication (local DB <-> default remote) -------
@@ -181,7 +333,12 @@ export class SyncEngine {
         return;
       }
       const doc = await this.resolveConflicts(change.id);
-      if (!doc || doc._deleted || !doc.path || typeof doc.data !== "string") return;
+      if (!doc || doc._deleted || !doc.path) return;
+      if (doc.type === "folder") {
+        await this.ensureFolderExists(doc.path);
+        return;
+      }
+      if (typeof doc.data !== "string") return;
       const content = await decryptString(doc.data, v.passphrase);
       await this.writeToVault(doc.path, content);
     } catch (e) {
@@ -282,6 +439,12 @@ export class SyncEngine {
     }
     await this.ensureParentFolder(p);
     await this.app.vault.create(p, content);
+  }
+
+  private async ensureFolderExists(path: string): Promise<void> {
+    const p = normalizePath(path);
+    if (this.app.vault.getAbstractFileByPath(p) instanceof TFolder) return;
+    await this.app.vault.createFolder(p).catch(() => {});
   }
 
   private async ensureParentFolder(path: string): Promise<void> {
