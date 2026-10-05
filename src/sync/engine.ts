@@ -223,11 +223,7 @@ export class SyncEngine {
   ): Promise<string | null> {
     // This plugin's own doc (or an obsidian-livesync inline/HKDF data string).
     if (typeof doc.data === "string") {
-      try {
-        return await this.decryptPart(doc.data, passphrase, db);
-      } catch {
-        return null;
-      }
+      return await this.decryptPart(doc.data, passphrase, db);
     }
     // Legacy obsidian-livesync inline note.
     if (doc.type === "notes") {
@@ -279,14 +275,20 @@ export class SyncEngine {
     passphrase: string,
     db: PouchDB.Database,
   ): Promise<string | null> {
-    if (data.startsWith(OLS_HKDF_PREFIX)) {
-      const salt = await this.olsSalt(db);
-      if (!salt) return null;
-      return decryptHKDF(data, passphrase, salt);
+    try {
+      if (data.startsWith(OLS_HKDF_PREFIX)) {
+        const salt = await this.olsSalt(db);
+        if (!salt) return null;
+        return await decryptHKDF(data, passphrase, salt);
+      }
+      // ponytail: handles OLS HKDF ("%=") + this plugin's own format. Legacy OLS
+      // PBKDF2 ("%" / "%~") not decoded — add if a pre-HKDF remote shows up.
+      return await decryptString(data, passphrase);
+    } catch {
+      // Undecryptable (wrong passphrase / corrupt / unsupported) → skip this
+      // doc, don't let a Web Crypto OperationError abort the whole pull.
+      return null;
     }
-    // ponytail: handles OLS HKDF ("%=") + this plugin's own format. Legacy OLS
-    // PBKDF2 ("%" / "%~") not decoded — add if a pre-HKDF remote shows up.
-    return decryptString(data, passphrase);
   }
 
   /** Fetch & cache obsidian-livesync's shared PBKDF2 salt for `db`. */
