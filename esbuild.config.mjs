@@ -43,7 +43,9 @@ const ctx = await esbuild.context({
     format: "cjs",
     target: "es2018",
     jsx: "automatic",
-    external: ["obsidian", "electron", "@codemirror/*", ...builtins],
+    // Bundle the `events` polyfill instead of emitting require("events"),
+    // which has no provider on Obsidian mobile (no Node runtime).
+    external: ["obsidian", "electron", "@codemirror/*", ...builtins.filter((m) => m !== "events")],
     define: { global: "window" },
     sourcemap: prod ? false : "inline",
     treeShaking: true,
