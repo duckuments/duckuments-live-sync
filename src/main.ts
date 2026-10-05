@@ -8,6 +8,8 @@ import {
 import { SyncEngine, type SyncStatus } from "./sync/engine";
 import { VaultChooserModal } from "./ui/VaultChooserModal";
 import { DuckumentsSettingTab } from "./ui/SettingsTab";
+import { LogView, LOG_VIEW_TYPE } from "./ui/LogView";
+import { logger } from "./log";
 
 const STATUS: Record<SyncStatus, { icon: string; cls: string; label: string }> =
   {
@@ -41,7 +43,13 @@ export default class DuckumentsLiveSync extends Plugin {
     this.renderStatus("off");
 
     this.addSettingTab(new DuckumentsSettingTab(this.app, this));
+    this.registerView(LOG_VIEW_TYPE, (leaf) => new LogView(leaf));
 
+    this.addCommand({
+      id: "show-logs",
+      name: "Show logs",
+      callback: () => this.showLogs(),
+    });
     this.addCommand({
       id: "push",
       name: "Push: send local changes to the default remote",
@@ -102,7 +110,20 @@ export default class DuckumentsLiveSync extends Plugin {
   }
 
   private run(p: Promise<unknown>): void {
-    p.catch((e) => new Notice("LiveSync: " + String(e)));
+    p.catch((e) => {
+      logger.log("ERROR: " + String(e));
+      new Notice("LiveSync: " + String(e));
+    });
+  }
+
+  private async showLogs(): Promise<void> {
+    const { workspace } = this.app;
+    let leaf = workspace.getLeavesOfType(LOG_VIEW_TYPE)[0];
+    if (!leaf) {
+      leaf = workspace.getLeaf(true);
+      await leaf.setViewState({ type: LOG_VIEW_TYPE, active: true });
+    }
+    workspace.revealLeaf(leaf);
   }
 
   private async withDefault(
@@ -116,6 +137,7 @@ export default class DuckumentsLiveSync extends Plugin {
     try {
       await fn(v);
     } catch (e) {
+      logger.log("ERROR: " + String(e));
       new Notice("LiveSync: " + String(e));
     }
   }
@@ -148,6 +170,7 @@ export default class DuckumentsLiveSync extends Plugin {
     if (st.cls) this.statusEl.addClass(st.cls);
     this.statusEl.setAttribute("aria-label", msg ?? st.label);
     this.statusEl.title = msg ?? st.label;
+    if (msg || s === "error") logger.log(`[${s}] ${msg ?? st.label}`);
   }
 
   async loadSettings(): Promise<void> {

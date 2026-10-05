@@ -34,6 +34,10 @@
 .duckuments-field input {
   flex: 1;
 }
+.duckuments-field input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: auto;
+}
 .duckuments-card-actions {
   display: flex;
   gap: 8px;
@@ -48,4 +52,24 @@
 }
 .duckuments-status-error {
   color: var(--text-error);
+}
+.duckuments-vault-summary {
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+.duckuments-log {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 12px;
+  margin: 0;
+  height: 100%;
+  overflow: auto;
+  user-select: text;
 }

@@ -14,6 +14,7 @@ import type { RemoteVault } from "../settings";
 import { remoteDB } from "../api/routes";
 import { encryptString, decryptString } from "../api/encryption";
 import { isSyncable, type NoteDoc } from "./mapping";
+import { logger } from "../log";
 
 export type SyncStatus = "off" | "synced" | "dirty" | "syncing" | "error";
 
@@ -102,14 +103,33 @@ export class SyncEngine {
     const db = remoteDB(v);
     const res = await db.allDocs<NoteDoc>({ include_docs: true });
     let n = 0;
+    let skipped = 0;
+    let sample: NoteDoc | undefined;
     for (const row of res.rows) {
       const doc = row.doc;
-      if (!doc || !doc.path || doc._deleted) continue;
+      if (!doc || doc._id.startsWith("_design")) continue;
+      // Only this plugin's docs have a `path` and a string `data` field.
+      // Docs from another tool (e.g. obsidian-livesync's chunked schema) are
+      // skipped rather than crashing the pull.
+      if (!doc.path || doc._deleted || typeof doc.data !== "string") {
+        skipped++;
+        if (!sample) sample = doc;
+        continue;
+      }
       const content = await decryptString(doc.data, v.passphrase);
       await this.writeToVault(doc.path, content);
       n++;
     }
-    this.onStatus("synced", `Pulled ${n} notes.`);
+    if (n === 0 && skipped > 0 && sample) {
+      logger.log(
+        `Pull: skipped ${skipped} doc(s) not in this plugin's format. ` +
+          `Sample "${sample._id}" fields: ${Object.keys(sample).join(", ")}`,
+      );
+    }
+    this.onStatus(
+      "synced",
+      `Pulled ${n} notes (server had ${res.rows.length} docs, skipped ${skipped}).`,
+    );
     return n;
   }
 
@@ -161,7 +181,7 @@ export class SyncEngine {
         return;
       }
       const doc = await this.resolveConflicts(change.id);
-      if (!doc || doc._deleted) return;
+      if (!doc || doc._deleted || !doc.path || typeof doc.data !== "string") return;
       const content = await decryptString(doc.data, v.passphrase);
       await this.writeToVault(doc.path, content);
     } catch (e) {

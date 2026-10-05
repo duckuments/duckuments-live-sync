@@ -149,11 +149,13 @@ function VaultCard({
   };
 
   return (
-    <div className={"duckuments-vault-card" + (isDefault ? " is-default" : "")}>
-      <h4>
+    <details
+      className={"duckuments-vault-card" + (isDefault ? " is-default" : "")}
+    >
+      <summary className="duckuments-vault-summary">
         {v.name || "(unnamed)"}
         {isDefault && <span className="duckuments-badge">default</span>}
-      </h4>
+      </summary>
       {field("Name", "name")}
       {field("Server URL", "couchURI")}
       {field("Database", "dbName")}
@@ -169,6 +171,6 @@ function VaultCard({
           Remove
         </button>
       </div>
-    </div>
+    </details>
   );
 }
