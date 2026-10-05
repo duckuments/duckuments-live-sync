@@ -39,7 +39,13 @@ export default class DuckumentsLiveSync extends Plugin {
   async onload(): Promise<void> {
     await this.loadSettings();
     this.statusEl = this.addStatusBarItem();
-    this.engine = new SyncEngine(this.app, (s, m) => this.renderStatus(s, m));
+    this.engine = new SyncEngine(
+      this.app,
+      this.settings,
+      // persist seq without saveSettings() — that would restart live sync.
+      () => this.saveData(this.settings),
+      (s, m) => this.renderStatus(s, m),
+    );
     this.renderStatus("off");
 
     this.addSettingTab(new DuckumentsSettingTab(this.app, this));

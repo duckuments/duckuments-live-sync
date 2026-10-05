@@ -10,7 +10,7 @@
 //    the vault. See reflectDocToVault / upsertToLocal for the loop guard.
 import { type App, TFile, TFolder, normalizePath } from "obsidian";
 import PouchDB from "pouchdb-browser";
-import type { RemoteVault } from "../settings";
+import type { RemoteVault, LiveSyncSettings } from "../settings";
 import { remoteDB } from "../api/routes";
 import {
   encryptString,
@@ -35,6 +35,8 @@ export class SyncEngine {
 
   constructor(
     private app: App,
+    private settings: LiveSyncSettings,
+    private persist: () => Promise<void>,
     public onStatus: (s: SyncStatus, msg?: string) => void = () => {},
   ) {}
 
@@ -77,6 +79,19 @@ export class SyncEngine {
   async pushTo(v: RemoteVault): Promise<number> {
     this.onStatus("syncing", `Pushing to "${v.name}"...`);
     const db = remoteDB(v);
+    // Pull-before-push guard: update_seq is the remote "HEAD". If it moved since
+    // we last synced, someone else pushed — refuse until the user pulls.
+    const info = await db.info();
+    const base = this.settings.lastSeq[v.id];
+    const behind =
+      base === undefined
+        ? info.doc_count > 0
+        : base !== String(info.update_seq);
+    if (behind) {
+      const msg = `"${v.name}" has remote changes — pull before pushing.`;
+      this.onStatus("error", msg);
+      throw new Error(`"${v.name}" has remote changes. Pull first, then push.`);
+    }
     const files = this.app.vault.getFiles().filter(isSyncable);
     // Empty folders have no file, so sync them as marker docs so they survive
     // the round-trip (CouchDB has no folder concept).
@@ -123,6 +138,11 @@ export class SyncEngine {
     if (docs.length) await db.bulkDocs(docs as NoteDoc[]);
     // ponytail: push upserts present files/empty folders; it does not delete
     // remote docs for locally-removed ones. Live sync handles deletions.
+    // Record the new base. ponytail: tiny window — a write landing between
+    // bulkDocs and this info() read would be stored as "seen"; fails safe
+    // (worst case we overwrote it just now, which push already does).
+    this.settings.lastSeq[v.id] = String((await db.info()).update_seq);
+    await this.persist();
     this.dirty = false;
     this.onStatus(
       "synced",
@@ -135,6 +155,9 @@ export class SyncEngine {
   async pullFrom(v: RemoteVault): Promise<number> {
     this.onStatus("syncing", `Pulling from "${v.name}"...`);
     const db = remoteDB(v);
+    // Read the base seq BEFORE allDocs so it's never newer than what we pulled
+    // (conservative: a later interleaved write stays "unseen" → safe pull-first).
+    const info = await db.info();
     const res = await db.allDocs<Record<string, unknown>>({
       include_docs: true,
     });
@@ -174,6 +197,10 @@ export class SyncEngine {
           `Sample "${String(sample._id)}" fields: ${Object.keys(sample).join(", ")}`,
       );
     }
+    // Pull succeeded → this remote state is now our base, so the next push is
+    // allowed to build on it.
+    this.settings.lastSeq[v.id] = String(info.update_seq);
+    await this.persist();
     this.onStatus(
       "synced",
       `Pulled ${n} notes, ${folders} folders (server had ${res.rows.length} docs, skipped ${skipped}).`,

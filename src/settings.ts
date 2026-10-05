@@ -15,6 +15,8 @@ export interface LiveSyncSettings {
   defaultVaultId: string | null;
   liveSync: boolean; // continuous replication with the default vault
   syncOnStartup: boolean; // pull from the default remote once on load
+  // Last remote update_seq we saw per vault id (the "base" for pull-before-push).
+  lastSeq: Record<string, string>;
 }
 
 export const DEFAULT_SETTINGS: LiveSyncSettings = {
@@ -22,6 +24,7 @@ export const DEFAULT_SETTINGS: LiveSyncSettings = {
   defaultVaultId: null,
   liveSync: false,
   syncOnStartup: false,
+  lastSeq: {},
 };
 
 export function newVault(): RemoteVault {
