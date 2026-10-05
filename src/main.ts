@@ -131,7 +131,7 @@ export default class DuckumentsLiveSync extends Plugin {
       leaf = workspace.getLeaf(true);
       await leaf.setViewState({ type: LOG_VIEW_TYPE, active: true });
     }
-    workspace.revealLeaf(leaf);
+    void workspace.revealLeaf(leaf);
   }
 
   private async withDefault(
@@ -182,7 +182,8 @@ export default class DuckumentsLiveSync extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const data = (await this.loadData()) as Partial<LiveSyncSettings> | null;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
   }
 
   async saveSettings(): Promise<void> {

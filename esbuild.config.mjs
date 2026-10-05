@@ -2,7 +2,7 @@ import esbuild from "esbuild";
 import process from "process";
 import fs from "node:fs";
 import path from "node:path";
-import builtins from "builtin-modules";
+import { builtinModules as builtins } from "node:module";
 
 // Load .env (for PATHS_TEST_INSTALL) if present. Node 20.12+/22+ built-in.
 try {

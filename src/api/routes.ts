@@ -1,6 +1,7 @@
 // API layer: everything that talks to the CouchDB server lives here.
 // The sync engine and UI call these; they never build URLs or PouchDB handles
 // themselves.
+import { requestUrl } from "obsidian";
 import PouchDB from "pouchdb-browser";
 import type { RemoteVault } from "../settings";
 
@@ -18,7 +19,7 @@ export function remoteDB(v: RemoteVault): PouchDB.Database {
   return new PouchDB(url, {
     auth: { username: v.username, password: v.password },
     skip_setup: false,
-  } as PouchDB.Configuration.RemoteDatabaseConfiguration);
+  });
 }
 
 /** A PouchDB handle for an arbitrary database name on the same server as `v`. */
@@ -46,12 +47,12 @@ export async function testConnection(
 
 /** List database names on the server (for PULL FROM / PUSH FROM choosers). */
 export async function listRemoteVaults(v: RemoteVault): Promise<string[]> {
-  const res = await fetch(`${trimSlash(v.couchURI)}/_all_dbs`, {
+  const res = await requestUrl({
+    url: `${trimSlash(v.couchURI)}/_all_dbs`,
     headers: { Authorization: basicAuthHeader(v) },
   });
-  if (!res.ok)
-    throw new Error(`_all_dbs failed: ${res.status} ${res.statusText}`);
-  const dbs = (await res.json()) as string[];
+  if (res.status >= 400) throw new Error(`_all_dbs failed: ${res.status}`);
+  const dbs = res.json as string[];
   // Hide CouchDB system databases.
   return dbs.filter((d) => !d.startsWith("_"));
 }

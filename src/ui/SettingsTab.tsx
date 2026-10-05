@@ -56,7 +56,7 @@ function SettingsView({ plugin }: { plugin: DuckumentsLiveSync }) {
 
   const addVault = () => {
     const v = newVault();
-    save({
+    void save({
       ...settings,
       vaults: [...settings.vaults, v],
       defaultVaultId: settings.defaultVaultId ?? v.id,
@@ -65,7 +65,7 @@ function SettingsView({ plugin }: { plugin: DuckumentsLiveSync }) {
 
   const removeVault = (id: string) => {
     const vaults = settings.vaults.filter((v) => v.id !== id);
-    save({
+    void save({
       ...settings,
       vaults,
       defaultVaultId:
@@ -84,7 +84,9 @@ function SettingsView({ plugin }: { plugin: DuckumentsLiveSync }) {
         <input
           type="checkbox"
           checked={settings.liveSync}
-          onChange={(e) => save({ ...settings, liveSync: e.target.checked })}
+          onChange={(e) =>
+            void save({ ...settings, liveSync: e.target.checked })
+          }
         />
         <span className="setting-item-description">
           Continuously sync with the default remote vault.
@@ -97,7 +99,7 @@ function SettingsView({ plugin }: { plugin: DuckumentsLiveSync }) {
           type="checkbox"
           checked={settings.syncOnStartup}
           onChange={(e) =>
-            save({ ...settings, syncOnStartup: e.target.checked })
+            void save({ ...settings, syncOnStartup: e.target.checked })
           }
         />
         <span className="setting-item-description">
@@ -116,8 +118,8 @@ function SettingsView({ plugin }: { plugin: DuckumentsLiveSync }) {
           key={v.id}
           v={v}
           isDefault={v.id === effectiveDefault}
-          onChange={(patch) => updateVault(v.id, patch)}
-          onDefault={() => save({ ...settings, defaultVaultId: v.id })}
+          onChange={(patch) => void updateVault(v.id, patch)}
+          onDefault={() => void save({ ...settings, defaultVaultId: v.id })}
           onRemove={() => removeVault(v.id)}
         />
       ))}
@@ -178,7 +180,7 @@ function VaultCard({
       {field("Passphrase (E2EE)", "passphrase", "password")}
       <div className="duckuments-card-actions">
         {!isDefault && <button onClick={onDefault}>Set default</button>}
-        <button onClick={test} disabled={testing}>
+        <button onClick={() => void test()} disabled={testing}>
           {testing ? "Testing…" : "Test connection"}
         </button>
         <button className="mod-warning" onClick={onRemove}>

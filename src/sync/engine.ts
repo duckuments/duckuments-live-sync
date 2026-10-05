@@ -135,7 +135,7 @@ export class SyncEngine {
         data: "",
       });
     }
-    if (docs.length) await db.bulkDocs(docs as NoteDoc[]);
+    if (docs.length) await db.bulkDocs(docs);
     // ponytail: push upserts present files/empty folders; it does not delete
     // remote docs for locally-removed ones. Live sync handles deletions.
     // Record the new base. ponytail: tiny window — a write landing between
@@ -390,7 +390,7 @@ export class SyncEngine {
     ];
     revs.sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0));
     const [winner, ...losers] = revs;
-    for (const l of losers) await db.remove(l._id, l._rev!).catch(() => {});
+    for (const l of losers) await db.remove(l._id, l._rev).catch(() => {});
     return winner;
   }
 
@@ -451,7 +451,7 @@ export class SyncEngine {
   private async deleteFromLocal(path: string): Promise<void> {
     const db = this.db();
     const existing = await db.get(path).catch(() => null);
-    if (existing) await db.remove(existing._id, existing._rev!).catch(() => {});
+    if (existing) await db.remove(existing._id, existing._rev).catch(() => {});
   }
 
   // ---- vault write helpers --------------------------------------------
@@ -483,6 +483,6 @@ export class SyncEngine {
 
   private async trashVaultFile(path: string): Promise<void> {
     const af = this.app.vault.getAbstractFileByPath(normalizePath(path));
-    if (af) await this.app.vault.trash(af, false).catch(() => {});
+    if (af) await this.app.fileManager.trashFile(af).catch(() => {});
   }
 }
