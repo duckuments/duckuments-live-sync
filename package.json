@@ -1,6 +1,6 @@
 {
   "name": "duckuments-live-sync",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Minimal self-hosted CouchDB live sync plugin for Obsidian.",
   "main": "main.js",
   "type": "module",
