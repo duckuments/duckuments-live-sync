@@ -12,6 +12,7 @@ It keeps your notes in your own CouchDB instead of a third-party service. Notes 
 - **End-to-end encryption** — AES-GCM with a PBKDF2-derived key (200k iterations). Passphrase stays local; leave it blank to disable.
 - **obsidian-livesync interop** — can read notes written by [obsidian-livesync](https://github.com/vrtmrz/obsidian-livesync), decrypting its HKDF-chunked documents on pull.
 - **Log view** — in-app command to watch what the plugin is doing.
+- **Public preview** — share a read-only web page of a single note with **Copy public link**. Publishes a plaintext snapshot that the separate [live-note-preview](https://github.com/duckuments/live-note-preview-obsidian) viewer renders at a stable URL.
 
 ## How it works
 
@@ -30,13 +31,13 @@ Only text files sync for now (`md`, `txt`, `json`, `css`, `canvas`, `html`, `csv
 
 Open the plugin's settings tab and add a remote vault:
 
-| Field | Example |
-|-------|---------|
-| Name | `My Couch` |
-| CouchDB URL | `https://couch.example.com:6984` |
-| Username / Password | your CouchDB credentials |
-| Database | `my_vault` |
-| Passphrase | E2EE passphrase (blank = no encryption) |
+| Field               | Example                                 |
+| ------------------- | --------------------------------------- |
+| Name                | `My Couch`                              |
+| CouchDB URL         | `https://couch.example.com:6984`        |
+| Username / Password | your CouchDB credentials                |
+| Database            | `my_vault`                              |
+| Passphrase          | E2EE passphrase (blank = no encryption) |
 
 Set one remote as the default, then toggle **Live sync** on, or use the commands below.
 
@@ -47,6 +48,19 @@ Set one remote as the default, then toggle **Live sync** on, or use the commands
 - **Push from… / Pull from…** — choose which remote
 - **Toggle live sync**
 - **Show logs**
+- **Copy public link for the active note** — publish the current note and copy its public URL
+
+## Public preview (share a note)
+
+The **Copy public link for the active note** command publishes the current note as a public web page and copies its URL to your clipboard.
+
+- A `slug` is written into the note's frontmatter (or reused if already present), so the link stays the same every time you re-publish: `https://obsidian.loonielabs.net/r/<slug>`.
+- It writes a `pub:<slug>` snapshot document to your **default** remote holding the note's plaintext markdown and title.
+- A separate viewer app ([live-note-preview](https://github.com/duckuments/live-note-preview-obsidian)) serves `/r/<slug>`: its backend reads `pub:<slug>` from CouchDB (credentials stay server-side) and the page renders the markdown with a live table of contents.
+
+> ⚠️ **Published snapshots are not encrypted.** Unlike synced notes, the snapshot is stored as plaintext so the viewer can read it without your passphrase. Anyone with the link can read the note. The slug is unguessable but the page is not access-controlled.
+
+It's a snapshot, not a live mirror — re-run the command to update the published copy. There's no "unpublish" command yet; delete the `pub:<slug>` document from CouchDB to take a note down.
 
 ## Development
 
