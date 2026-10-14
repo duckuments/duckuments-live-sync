@@ -136,8 +136,27 @@ export class SyncEngine {
       });
     }
     if (docs.length) await db.bulkDocs(docs);
-    // ponytail: push upserts present files/empty folders; it does not delete
-    // remote docs for locally-removed ones. Live sync handles deletions.
+    // Propagate local deletions: tombstone any remote file/folder doc whose
+    // path no longer exists locally. Scope is only the doc types push itself
+    // manages ("plain" text notes, legacy "notes", empty-"folder" markers) so
+    // we never touch binaries ("newnote") or obsidian-livesync chunk/leaf docs
+    // — those were never local, so "missing locally" doesn't mean "deleted".
+    const idSet = new Set(ids);
+    const all = await db.allDocs<Record<string, unknown>>({
+      include_docs: true,
+    });
+    const tombstones: NoteDoc[] = [];
+    for (const row of all.rows) {
+      const doc = row.doc as Record<string, unknown> | undefined;
+      if (!doc) continue;
+      const id = String(doc._id);
+      if (typeof doc.path !== "string" || doc._deleted || doc.deleted) continue;
+      if (doc.type !== "plain" && doc.type !== "notes" && doc.type !== "folder")
+        continue;
+      if (idSet.has(id)) continue;
+      tombstones.push({ _id: id, _rev: String(doc._rev), _deleted: true } as NoteDoc);
+    }
+    if (tombstones.length) await db.bulkDocs(tombstones);
     // Record the new base. ponytail: tiny window — a write landing between
     // bulkDocs and this info() read would be stored as "seen"; fails safe
     // (worst case we overwrote it just now, which push already does).
@@ -146,7 +165,8 @@ export class SyncEngine {
     this.dirty = false;
     this.onStatus(
       "synced",
-      `Pushed ${files.length} notes, ${emptyFolders.length} empty folders.`,
+      `Pushed ${files.length} notes, ${emptyFolders.length} empty folders` +
+        (tombstones.length ? `, deleted ${tombstones.length}.` : "."),
     );
     return docs.length;
   }
