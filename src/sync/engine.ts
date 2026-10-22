@@ -81,12 +81,19 @@ export class SyncEngine {
     const db = remoteDB(v);
     // Pull-before-push guard: update_seq is the remote "HEAD". If it moved since
     // we last synced, someone else pushed — refuse until the user pulls.
+    // Skip it while live sync is running for this remote: live replication is
+    // continuously writing local edits up to the remote (bumping update_seq), so
+    // the guard only ever sees our own echoed writes and can never be satisfied.
+    // ponytail: gate on the live handler; the non-live/multi-device case still guards.
     const info = await db.info();
     const base = this.settings.lastSeq[v.id];
+    const live = !!this.syncHandler && this.defaultVault?.id === v.id;
     const behind =
-      base === undefined
-        ? info.doc_count > 0
-        : base !== String(info.update_seq);
+      live
+        ? false
+        : base === undefined
+          ? info.doc_count > 0
+          : base !== String(info.update_seq);
     if (behind) {
       const msg = `"${v.name}" has remote changes — pull before pushing.`;
       this.onStatus("error", msg);
