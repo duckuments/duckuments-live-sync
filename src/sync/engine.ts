@@ -18,7 +18,7 @@ import {
   decryptHKDF,
   OLS_HKDF_PREFIX,
 } from "../api/encryption";
-import { isSyncable, type NoteDoc } from "./mapping";
+import { isSyncable, remoteMayOverwrite, type NoteDoc } from "./mapping";
 import { logger } from "../log";
 
 export type SyncStatus = "off" | "synced" | "dirty" | "syncing" | "error";
@@ -185,6 +185,7 @@ export class SyncEngine {
     let folders = 0;
     let skipped = 0;
     let sample: Record<string, unknown> | undefined;
+    const kept: string[] = [];
     for (const row of res.rows) {
       const doc = row.doc as Record<string, unknown> | undefined;
       if (!doc) continue;
@@ -208,6 +209,18 @@ export class SyncEngine {
         if (!sample) sample = doc;
         continue;
       }
+      // Non-destructive pull: if the local file is newer than the remote doc it
+      // holds edits that were never pushed (e.g. a just-published note whose
+      // slug write bumped its mtime). Keep local instead of clobbering it — the
+      // old behaviour here is what reverted notes and lost work.
+      // ponytail: mtime last-write-wins, same policy as live resolveConflicts.
+      // Add a stored 3-way base if clock skew between devices causes false keeps.
+      const local = this.app.vault.getAbstractFileByPath(normalizePath(path));
+      const localMtime = local instanceof TFile ? local.stat.mtime : null;
+      if (!remoteMayOverwrite(localMtime, doc.mtime)) {
+        kept.push(path);
+        continue;
+      }
       await this.writeToVault(path, content);
       n++;
     }
@@ -217,13 +230,19 @@ export class SyncEngine {
           `Sample "${String(sample._id)}" fields: ${Object.keys(sample).join(", ")}`,
       );
     }
+    if (kept.length) {
+      logger.log(
+        `Pull: kept ${kept.length} local file(s) newer than the remote ` +
+          `(unpushed edits, not overwritten): ${kept.join(", ")}`,
+      );
+    }
     // Pull succeeded → this remote state is now our base, so the next push is
     // allowed to build on it.
     this.settings.lastSeq[v.id] = String(info.update_seq);
     await this.persist();
     this.onStatus(
       "synced",
-      `Pulled ${n} notes, ${folders} folders (server had ${res.rows.length} docs, skipped ${skipped}).`,
+      `Pulled ${n} notes, ${folders} folders (server had ${res.rows.length} docs, skipped ${skipped}, kept ${kept.length} newer local).`,
     );
     return n;
   }

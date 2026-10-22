@@ -35,3 +35,17 @@ export function isSyncable(file: TFile): boolean {
 export function docIdForPath(path: string): string {
   return path;
 }
+
+/**
+ * Pull guard: may a remote doc overwrite the local file, or is the local copy
+ * newer (unpushed edits) and must be kept? mtime last-write-wins. `localMtime`
+ * is null when there is no local file (always safe to write). A remote doc with
+ * no numeric mtime counts as mtime 0, so any real local file wins over it.
+ */
+export function remoteMayOverwrite(
+  localMtime: number | null,
+  remoteMtime: unknown,
+): boolean {
+  if (localMtime === null) return true;
+  return localMtime <= (typeof remoteMtime === "number" ? remoteMtime : 0);
+}
