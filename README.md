@@ -43,7 +43,7 @@ Set one remote as the default, then toggle **Live sync** on, or use the commands
 
 ## Commands
 
-- **Push** — send local changes to the default remote
+- **Push** — send local changes to the default remote (overwrites the remote copy; no pull-before-push check)
 - **Pull** — get changes from the default remote
 - **Push from… / Pull from…** — choose which remote
 - **Toggle live sync**

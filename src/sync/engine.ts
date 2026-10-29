@@ -79,26 +79,6 @@ export class SyncEngine {
   async pushTo(v: RemoteVault): Promise<number> {
     this.onStatus("syncing", `Pushing to "${v.name}"...`);
     const db = remoteDB(v);
-    // Pull-before-push guard: update_seq is the remote "HEAD". If it moved since
-    // we last synced, someone else pushed — refuse until the user pulls.
-    // Skip it while live sync is running for this remote: live replication is
-    // continuously writing local edits up to the remote (bumping update_seq), so
-    // the guard only ever sees our own echoed writes and can never be satisfied.
-    // ponytail: gate on the live handler; the non-live/multi-device case still guards.
-    const info = await db.info();
-    const base = this.settings.lastSeq[v.id];
-    const live = !!this.syncHandler && this.defaultVault?.id === v.id;
-    const behind =
-      live
-        ? false
-        : base === undefined
-          ? info.doc_count > 0
-          : base !== String(info.update_seq);
-    if (behind) {
-      const msg = `"${v.name}" has remote changes — pull before pushing.`;
-      this.onStatus("error", msg);
-      throw new Error(`"${v.name}" has remote changes. Pull first, then push.`);
-    }
     const files = this.app.vault.getFiles().filter(isSyncable);
     // Empty folders have no file, so sync them as marker docs so they survive
     // the round-trip (CouchDB has no folder concept).

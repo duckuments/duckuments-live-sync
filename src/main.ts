@@ -181,8 +181,7 @@ export default class DuckumentsLiveSync extends Plugin {
       new Notice("No remote configured. Add one in settings.");
       return;
     }
-    // Pull first so we publish the latest remote content, not a stale local
-    // copy — publishing bypasses pushTo's pull-before-push guard otherwise.
+    // Pull first so we publish the latest remote content, not a stale local copy.
     await this.engine.pullFrom(v);
     const original = await this.app.vault.read(file);
     const { slug, text } = ensureSlug(original);
